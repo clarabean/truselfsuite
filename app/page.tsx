@@ -149,7 +149,7 @@ export default function App() {
     const prompt = `You are the "TruSelf Master Behavioral Coach". Analyze this journal entry and respond ONLY in valid JSON with these exact keys: {"summary": "2 sentence synthesis of what they are really saying", "topDomain": "one of: Advancement, Achievement, Creation/Choice, Resource Gaining, Vitality, Dreams/Passions, People, Connection", "emotionalUndertone": "primary and secondary emotions", "patternDiagnosis": "life pattern name and how it shows up", "worthConsidering": "strategic growth advice", "coachingQuestion": "one sharp coaching question"}\n\nJournal entry: "${diaryEntry}"`;
 
     try {
-      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
+      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 

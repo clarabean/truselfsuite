@@ -7,23 +7,28 @@ import {
   ArrowRight, Info
 } from 'lucide-react';
 
+// Firebase Imports
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from 'firebase/auth';
-import { getFirestore, collection, onSnapshot, addDoc } from 'firebase/firestore';
+import { getFirestore, collection, onSnapshot, addDoc, doc } from 'firebase/firestore';
 
-const firebaseConfig = {
-  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
-  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
-  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
-  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
-  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
+// --- Global Environment Handling ---
+const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
+  apiKey: "placeholder",
+  authDomain: "placeholder",
+  projectId: "placeholder",
+  storageBucket: "placeholder",
+  messagingSenderId: "placeholder",
+  appId: "placeholder",
 };
 
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 const auth = getAuth(app);
 const db = getFirestore(app);
-const sanitizedAppId = 'truself-suite';
+
+// Sanitize appId to avoid slash-related Firestore path errors (fixing the "even number of segments" error)
+const rawAppId = typeof __app_id !== 'undefined' ? __app_id : 'truself-suite';
+const sanitizedAppId = rawAppId.replace(/\//g, '_');
 
 const DOMAINS: Record<string, { title: string, color: string, icon: React.ReactNode, questions: string[] }> = {
   ADVANCEMENT: { 
@@ -83,7 +88,7 @@ const DOMAINS: Record<string, { title: string, color: string, icon: React.ReactN
       "How does your physical environment affect your mental clarity?",
       "What is one ritual that consistently restores your power?",
       "If your health was a project, would it be 'on track' or 'failing'?",
-      "What is the one thing you can stop doing to instantly feel better?"
+      "What is one thing you can stop doing to instantly feel better?"
     ] 
   },
   DREAMS_PASSIONS: { 
@@ -140,10 +145,15 @@ export default function App() {
   const [journalingPrompt, setJournalingPrompt] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
+  // --- Auth & Data Initialisation ---
   useEffect(() => {
     const initAuth = async () => {
       try {
-        await signInAnonymously(auth);
+        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+          await signInWithCustomToken(auth, __initial_auth_token);
+        } else {
+          await signInAnonymously(auth);
+        }
       } catch (e) {
         console.error("Auth init failed", e);
       }
@@ -158,6 +168,7 @@ export default function App() {
     const entriesCol = collection(db, 'artifacts', sanitizedAppId, 'users', user.uid, 'entries');
     const unsubscribe = onSnapshot(entriesCol, (snap) => {
       const data = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      // Local sort to avoid requiring composite indexes
       setDiaryHistory(data.sort((a: any, b: any) => (b.timestamp || 0) - (a.timestamp || 0)));
     }, (err) => {
       console.error("Firestore Listen Error:", err);
@@ -192,19 +203,57 @@ export default function App() {
     setIsAnalyzing(true);
     setErrorMessage(null);
 
-    try {
-      const res = await fetch('/api/analyze', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ diaryEntry })
-      });
+    const apiKey = ""; // Canvas runtime key
+    const systemPrompt = `You are the "TruSelf Master Behavioral Coach". Respond ONLY in valid JSON with these EXACT keys: {"summary": "2 sentences", "topDomain": "Domain Name", "emotionalUndertone": "Description", "patternDiagnosis": "Pattern Name", "worthConsidering": "Advice", "coachingQuestion": "Question"}`;
 
-      const aiData = await res.json();
+    const fetchWithRetry = async (retries = 5, delay = 1000) => {
+      try {
+        const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ 
+            contents: [{ parts: [{ text: systemPrompt + "\n\nUser Entry: " + diaryEntry }] }],
+            generationConfig: { 
+              responseMimeType: "application/json",
+              responseSchema: {
+                type: "OBJECT",
+                properties: {
+                  summary: { type: "STRING" },
+                  topDomain: { type: "STRING" },
+                  emotionalUndertone: { type: "STRING" },
+                  patternDiagnosis: { type: "STRING" },
+                  worthConsidering: { type: "STRING" },
+                  coachingQuestion: { type: "STRING" }
+                },
+                required: ["summary", "topDomain", "emotionalUndertone", "patternDiagnosis", "worthConsidering", "coachingQuestion"]
+              }
+            } 
+          })
+        });
 
-      if (!res.ok) {
-        throw new Error(aiData.error || "The Sieve is currently busy.");
+        if (!res.ok) {
+          if (res.status === 429 && retries > 0) {
+            await new Promise(r => setTimeout(r, delay));
+            return fetchWithRetry(retries - 1, delay * 2);
+          }
+          throw new Error("API call failed");
+        }
+
+        const data = await res.json();
+        const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (!text) throw new Error("No response");
+        return JSON.parse(text);
+      } catch (e) {
+        if (retries > 0) {
+          await new Promise(r => setTimeout(r, delay));
+          return fetchWithRetry(retries - 1, delay * 2);
+        }
+        throw e;
       }
+    };
 
+    try {
+      const aiData = await fetchWithRetry();
       const newEntry = { 
         ...aiData, 
         timestamp: Date.now(), 
@@ -218,7 +267,7 @@ export default function App() {
       setJournalingPrompt(null);
     } catch (e: any) { 
       console.error(e);
-      setErrorMessage(e.message || "Analysis failed. Please try again.");
+      setErrorMessage("The Sieve is currently resetting. Please try again in 60 seconds.");
     } finally { 
       setIsAnalyzing(false); 
     }
@@ -258,7 +307,11 @@ export default function App() {
                 <div className="relative h-[58%] bg-[#F8FAFC] border-b-[12px] border-[#1E1B4B] overflow-hidden">
                   <div className="absolute left-4 right-4 top-4 bottom-4 rounded-[40px] bg-slate-200/30 shadow-inner overflow-hidden">
                     {balls.map(b => (
-                      <div key={b.id} className={`absolute w-12 h-12 rounded-full shadow-2xl ${isSpinning ? 'animate-bounce' : ''}`} style={{ left: `${b.x}%`, top: `${b.y}%`, backgroundColor: b.color }} />
+                      <div 
+                        key={b.id} 
+                        className={`absolute w-12 h-12 rounded-full shadow-2xl ${isSpinning ? 'animate-bounce' : ''}`} 
+                        style={{ left: `${b.x}%`, top: `${b.y}%`, backgroundColor: b.color }} 
+                      />
                     ))}
                   </div>
                 </div>

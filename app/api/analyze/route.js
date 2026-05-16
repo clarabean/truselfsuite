@@ -25,62 +25,58 @@ export async function POST(req) {
       "coachingQuestion": "one sharp, deep question to leave them with"
     }`;
 
-    // List of reliable Google models to try in order of preference
-    const models = [
-      "gemini-1.5-flash",
-      "gemini-1.5-flash-8b",
-      "gemini-2.5-flash",
-      "gemini-1.5-pro"
+    // A robust, bulletproof cascade of request formats to support any regional/tier Google project configuration
+    const attempts = [
+      // Attempt 1: Standard v1beta with strict JSON response
+      {
+        url: `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
+        body: {
+          contents: [{ parts: [{ text: systemPrompt + "\n\nUser Entry: " + diaryEntry }] }],
+          generationConfig: { responseMimeType: "application/json" }
+        }
+      },
+      // Attempt 2: Stable v1 endpoint (some accounts prefer snake_case proto casing)
+      {
+        url: `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
+        body: {
+          contents: [{ parts: [{ text: systemPrompt + "\n\nUser Entry: " + diaryEntry }] }],
+          generationConfig: { response_mime_type: "application/json" } 
+        }
+      },
+      // Attempt 3: Fail-safe without any responseMimeType parameters (works globally on legacy projects)
+      {
+        url: `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
+        body: {
+          contents: [{ parts: [{ text: systemPrompt + "\n\nUser Entry: " + diaryEntry }] }]
+        }
+      }
     ];
 
-    let response;
     let lastError = null;
 
-    for (const model of models) {
+    for (let i = 0; i < attempts.length; i++) {
       try {
-        // Using stable production endpoint v1 instead of v1beta for better global consistency
-        const url = `https://generativelanguage.googleapis.com/v1/models/${model}:generateContent?key=${apiKey}`;
-        
-        response = await fetch(url, {
+        const attempt = attempts[i];
+        const response = await fetch(attempt.url, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{ parts: [{ text: systemPrompt + "\n\nUser Entry: " + diaryEntry }] }],
-            generationConfig: { 
-              responseMimeType: "application/json" 
-            }
-          })
+          body: JSON.stringify(attempt.body)
         });
 
         const data = await response.json();
 
         if (!response.ok) {
-          console.warn(`Model ${model} failed on server:`, data.error?.message || response.statusText);
+          console.warn(`Gemini Model fallback attempt ${i + 1} bypassed:`, data.error?.message || response.statusText);
           lastError = data.error?.message || `Status ${response.status}`;
-          continue; // Try the next model
+          continue; 
         }
 
         const textResponse = data.candidates?.[0]?.content?.parts?.[0]?.text;
         if (!textResponse) {
-          lastError = "Empty response returned from Google AI Studio";
-          continue; 
+          lastError = "Empty response returned from Google AI Studio.";
+          continue;
         }
 
-        // Successfully parsed and completed AI query
-        return NextResponse.json(JSON.parse(textResponse));
-      } catch (err) {
-        console.error(`Attempt with model ${model} encountered an exception:`, err);
-        lastError = err.message;
-      }
-    }
-
-    // Return the specific reason we failed so the frontend error console can display it clearly
-    return NextResponse.json({ 
-      error: `Could not reach any active Gemini models. Connection details: ${lastError}` 
-    }, { status: 404 });
-
-  } catch (error) {
-    console.error("Internal Server Error:", error);
-    return NextResponse.json({ error: "The Sieve encountered a technical glitch." }, { status: 500 });
-  }
-}
+        // Clean any markdown formatting code-blocks (e.g. ```json ... ```) returned during Attempt 3 fallback
+        const cleanText = textResponse.trim()
+          .replace(/^

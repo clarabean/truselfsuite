@@ -1,3 +1,5 @@
+'use client';
+
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { 
   PenLine, Sparkles, History, X, TrendingUp, Trophy, Sparkle, 

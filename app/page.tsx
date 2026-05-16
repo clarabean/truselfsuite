@@ -13,15 +13,24 @@ import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged }
 import { getFirestore, collection, onSnapshot, addDoc, doc, setDoc } from 'firebase/firestore';
 
 // --- Global Environment Handling ---
-const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
-  apiKey: "placeholder",
-  authDomain: "placeholder",
-  projectId: "placeholder",
-  storageBucket: "placeholder",
-  messagingSenderId: "placeholder",
-  appId: "placeholder",
+// Safe access using globalThis with type casting to bypass strict TypeScript checks on Vercel
+const getFirebaseConfig = () => {
+  const g = globalThis as any;
+  if (typeof g.__firebase_config !== 'undefined' && g.__firebase_config) {
+    return JSON.parse(g.__firebase_config);
+  }
+  return {
+    apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
+    authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
+    projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
+    storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
+    messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
+    appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
+  };
 };
-const appId = typeof __app_id !== 'undefined' ? __app_id : 'truself-suite';
+
+const firebaseConfig = getFirebaseConfig();
+const appId = typeof (globalThis as any).__app_id !== 'undefined' ? (globalThis as any).__app_id : 'truself-suite';
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
@@ -85,7 +94,7 @@ const DOMAINS = {
       "How does your physical environment affect your mental clarity?",
       "What is one ritual that consistently restores your power?",
       "If your health was a project, would it be 'on track' or 'failing'?",
-      "What is the one thing you can stop doing to instantly feel better?"
+      "What is the the one thing you can stop doing to instantly feel better?"
     ] 
   },
   DREAMS_PASSIONS: { 
@@ -146,8 +155,9 @@ export default function App() {
   useEffect(() => {
     const initAuth = async () => {
       try {
-        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-          await signInWithCustomToken(auth, __initial_auth_token);
+        const g = globalThis as any;
+        if (typeof g.__initial_auth_token !== 'undefined' && g.__initial_auth_token) {
+          await signInWithCustomToken(auth, g.__initial_auth_token);
         } else {
           await signInAnonymously(auth);
         }

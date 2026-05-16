@@ -13,7 +13,6 @@ import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
 import { getFirestore, collection, onSnapshot, addDoc } from 'firebase/firestore';
 
 // --- Firebase Configuration ---
-// These use the variables you already saved in your Vercel Dashboard
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
   authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
@@ -23,44 +22,21 @@ const firebaseConfig = {
   appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
 };
 
+// Initialize Firebase
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 const auth = getAuth(app);
 const db = getFirestore(app);
 const appId = 'truself-suite';
 
 const DOMAINS: Record<string, { title: string, color: string, icon: React.ReactNode, questions: string[] }> = {
-  ADVANCEMENT: { 
-    title: "Advancement", color: "#6366F1", icon: <TrendingUp className="w-5 h-5" />, 
-    questions: ["Where is your execution discipline currently slipping?", "What is one adaptable plan you can create for your biggest goal today?", "Looking ahead 3 years, what foresight would your future self give you now?"] 
-  },
-  ACHIEVEMENT: { 
-    title: "Achievement", color: "#D97706", icon: <Trophy className="w-5 h-5" />, 
-    questions: ["What does 'winning' look like for you in this current season?", "Are you playing the right 'game' in your career?", "What legacy is your current work building?"] 
-  },
-  CREATION_CHOICE: { 
-    title: "Creation/Choice", color: "#4338CA", icon: <Sparkle className="w-5 h-5" />, 
-    questions: ["If you were to reinvent yourself tomorrow, what's the first change?", "What past limitation is currently keeping you from a new possibility?", "What 'rule' are you following that doesn't actually exist?"] 
-  },
-  RESOURCE_GAINING: { 
-    title: "Resource Gaining", color: "#B45309", icon: <Wallet className="w-5 h-5" />, 
-    questions: ["How stable is your current financial foundation (1-10)?", "Where are you leaking resources (time, money, energy)?", "What new skill would be the most valuable resource for your future?"] 
-  },
-  VITALITY: { 
-    title: "Vitality", color: "#4F46E5", icon: <Zap className="w-5 h-5" />, 
-    questions: ["What is your current energy level? Biggest drain?", "What does your body need from you that you are currently ignoring?", "What is one ritual that consistently restores your power?"] 
-  },
-  DREAMS_PASSIONS: { 
-    title: "Dreams/Passions", color: "#F59E0B", icon: <HelpCircle className="w-5 h-5" />, 
-    questions: ["What activity makes you lose track of time entirely?", "What dream did you set aside because it felt 'unrealistic'?", "Whose life are you currently envious of, and what does that tell you?"] 
-  },
-  PEOPLE: { 
-    title: "People", color: "#312E81", icon: <Users className="w-5 h-5" />, 
-    questions: ["Who in your network is currently challenging you to grow?", "What boundary do you need to set with a person in your life?", "Who is the most 'generous' person you know?"] 
-  },
-  CONNECTION: { 
-    title: "Connection", color: "#92400E", icon: <Heart className="w-5 h-5" />, 
-    questions: ["How can you develop more 'presence' today?", "Who do you need to have a deep, honest conversation with?", "How do you currently block intimacy or deep connection?"] 
-  }
+  ADVANCEMENT: { title: "Advancement", color: "#6366F1", icon: <TrendingUp className="w-5 h-5" />, questions: ["Where is your execution discipline currently slipping?", "What is one adaptable plan you can create for your biggest goal today?"] },
+  ACHIEVEMENT: { title: "Achievement", color: "#D97706", icon: <Trophy className="w-5 h-5" />, questions: ["What does 'winning' look like for you in this current season?", "Are you playing the right 'game' in your career?"] },
+  CREATION_CHOICE: { title: "Creation/Choice", color: "#4338CA", icon: <Sparkle className="w-5 h-5" />, questions: ["If you were to reinvent yourself tomorrow, what's the first change?", "What 'rule' are you following that doesn't actually exist?"] },
+  RESOURCE_GAINING: { title: "Resource Gaining", color: "#B45309", icon: <Wallet className="w-5 h-5" />, questions: ["How stable is your current financial foundation (1-10)?", "Where are you leaking resources (time, money, energy)?"] },
+  VITALITY: { title: "Vitality", color: "#4F46E5", icon: <Zap className="w-5 h-5" />, questions: ["What is your current energy level? Biggest drain?", "What does your body need from you that you are currently ignoring?"] },
+  DREAMS_PASSIONS: { title: "Dreams/Passions", color: "#F59E0B", icon: <HelpCircle className="w-5 h-5" />, questions: ["What activity makes you lose track of time entirely?", "What dream did you set aside because it felt 'unrealistic'?"] },
+  PEOPLE: { title: "People", color: "#312E81", icon: <Users className="w-5 h-5" />, questions: ["Who in your network is currently challenging you to grow?", "What boundary do you need to set with a person in your life?"] },
+  CONNECTION: { title: "Connection", color: "#92400E", icon: <Heart className="w-5 h-5" />, questions: ["How can you develop more 'presence' today?", "How do you currently block intimacy or deep connection?"] }
 };
 
 export default function App() {
@@ -122,6 +98,7 @@ export default function App() {
     setErrorMessage(null);
 
     try {
+      // Calls your server-side API
       const res = await fetch('/api/analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -129,7 +106,8 @@ export default function App() {
       });
 
       const aiData = await res.json();
-      if (!res.ok) throw new Error(aiData.error || "Master Coach is busy.");
+      
+      if (!res.ok) throw new Error(aiData.error || "The Sieve is resetting. Please wait.");
 
       const newEntry = { 
         ...aiData, 
@@ -157,11 +135,6 @@ export default function App() {
   return (
     <div className="min-h-screen bg-[#0F172A] text-white flex flex-col font-sans" style={{ fontFamily: "'Jost', sans-serif" }}>
       <link href="https://fonts.googleapis.com/css2?family=Jost:wght@400;700;900&display=swap" rel="stylesheet" />
-      <div className="fixed inset-0 pointer-events-none opacity-20 z-0">
-        <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-indigo-600 rounded-full blur-[150px]"></div>
-        <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-amber-600 rounded-full blur-[150px]"></div>
-      </div>
-
       <nav className="relative z-50 flex items-center justify-between px-6 py-6 border-b border-white/5 backdrop-blur-md bg-[#0F172A]/40 sticky top-0">
         <div className="flex flex-col">
           <h1 className="text-xl font-black tracking-tighter text-amber-500 uppercase leading-none">TruSelf Suite</h1>
@@ -175,20 +148,20 @@ export default function App() {
 
       <main className="flex-1 relative z-10 flex flex-col items-center py-12 px-6 max-w-5xl mx-auto w-full">
         {activeTab === 'spin' ? (
-          <div className="flex flex-col items-center animate-in fade-in duration-700">
+          <div className="flex flex-col items-center">
             <h2 className="text-2xl font-bold mb-8 text-center">Spin for a coaching spark</h2>
             <div className="w-full max-w-[340px] aspect-[3/4.4]">
-              <div className="w-full h-full bg-white rounded-[50px] shadow-[0_30px_60px_-12px_rgba(0,0,0,0.8)] border-[12px] border-[#1E1B4B] overflow-hidden flex flex-col relative">
+              <div className="w-full h-full bg-white rounded-[50px] shadow-2xl border-[12px] border-[#1E1B4B] overflow-hidden flex flex-col">
                 <div className="relative h-[58%] bg-[#F8FAFC] border-b-[12px] border-[#1E1B4B] overflow-hidden">
-                  <div className="absolute left-4 right-4 top-4 bottom-4 rounded-[40px] bg-slate-200/30 shadow-inner overflow-hidden">
+                  <div className="absolute left-4 right-4 top-4 bottom-4 rounded-[40px] bg-slate-200/30 overflow-hidden">
                     {balls.map(b => (
-                      <div key={b.id} className={`absolute w-12 h-12 rounded-full shadow-2xl transition-all duration-700 ${isSpinning ? 'animate-bounce' : ''}`} style={{ left: `${b.x}%`, top: `${b.y}%`, backgroundColor: b.color, transform: `rotate(${b.rotation}deg)` }} />
+                      <div key={b.id} className={`absolute w-12 h-12 rounded-full shadow-2xl ${isSpinning ? 'animate-bounce' : ''}`} style={{ left: `${b.x}%`, top: `${b.y}%`, backgroundColor: b.color }} />
                     ))}
                   </div>
                 </div>
-                <div className="flex-1 bg-[#1E1B4B] p-4 flex flex-col items-center justify-center">
-                  <div className="w-24 h-24 bg-indigo-950 rounded-full shadow-2xl flex items-center justify-center border-4 border-indigo-900 cursor-pointer active:scale-95 transition-transform" style={{ transform: `rotate(${leverAngle}deg)`, transition: 'transform 1.8s ease-out' }} onClick={spinGacha}>
-                    <div className="w-16 h-4 bg-amber-500 rounded-full absolute shadow-inner"></div>
+                <div className="flex-1 bg-[#1E1B4B] flex items-center justify-center">
+                  <div className="w-24 h-24 bg-indigo-950 rounded-full border-4 border-indigo-900 cursor-pointer active:scale-95 transition-transform" style={{ transform: `rotate(${leverAngle}deg)`, transition: 'transform 1.8s ease-out' }} onClick={spinGacha}>
+                    <div className="w-16 h-4 bg-amber-500 rounded-full absolute"></div>
                     <div className="w-10 h-10 bg-white rounded-full border-4 border-amber-500 flex items-center justify-center z-20"><div className="w-3 h-3 bg-[#1E1B4B] rounded-full"></div></div>
                   </div>
                 </div>
@@ -196,8 +169,8 @@ export default function App() {
             </div>
           </div>
         ) : (
-          <div className="w-full flex flex-col lg:flex-row gap-12 items-start animate-in fade-in duration-700">
-            <div className="flex-1 w-full bg-white/5 backdrop-blur-md border border-white/10 rounded-[40px] p-8 shadow-2xl">
+          <div className="w-full flex flex-col lg:flex-row gap-12 items-start">
+            <div className="flex-1 w-full bg-white/5 border border-white/10 rounded-[40px] p-8">
               <div className="flex justify-between items-center mb-8">
                 <div className="flex items-center gap-4">
                   <div className="w-12 h-12 bg-amber-500 rounded-2xl flex items-center justify-center shadow-lg"><PenLine className="w-6 h-6 text-[#1E1B4B]" /></div>
@@ -208,40 +181,31 @@ export default function App() {
 
               {!historyOpen ? (
                 <div className="space-y-6">
-                  <div className="bg-indigo-500/10 border border-indigo-500/20 rounded-3xl p-6 flex gap-4 items-start shadow-sm">
-                    <Info className="w-4 h-4 text-indigo-400 mt-1 shrink-0" />
-                    <div>
-                      <h4 className="text-[11px] font-black uppercase text-indigo-300 tracking-widest mb-1 leading-none">Your Sieve Protocol</h4>
-                      <p className="text-[13px] text-indigo-100/70 font-medium leading-relaxed">Describe specific moments, feelings, and what you were thinking. The richer your story, the more clearly the patterns hidden beneath the surface will emerge.</p>
-                    </div>
-                  </div>
-                  {errorMessage && <p className="p-4 bg-red-500/10 border border-red-500/30 rounded-2xl text-red-200 text-sm font-medium">{errorMessage}</p>}
+                  {errorMessage && <div className="p-4 bg-red-500/20 border border-red-500/40 rounded-2xl text-red-200 text-sm font-medium">{errorMessage}</div>}
                   {journalingPrompt && <p className="p-4 bg-amber-500/10 border border-amber-500/30 rounded-2xl text-amber-200 font-bold italic">"{journalingPrompt}"</p>}
-                  <textarea value={diaryEntry} onChange={e => setDiaryEntry(e.target.value)} placeholder="What's on your mind? Tell us the story..." className="w-full h-80 bg-indigo-950/30 border border-white/10 rounded-3xl p-8 text-lg focus:ring-2 focus:ring-amber-500/50 transition-all outline-none resize-none text-indigo-100" />
-                  <button onClick={analyzeWithGemini} disabled={isAnalyzing || !diaryEntry.trim()} className="w-full py-6 bg-amber-500 text-[#1E1B4B] font-black rounded-3xl shadow-xl flex items-center justify-center gap-3 uppercase tracking-widest text-lg transition-all active:scale-95 disabled:opacity-50">
+                  <textarea value={diaryEntry} onChange={e => setDiaryEntry(e.target.value)} placeholder="What's on your mind? Tell us the story..." className="w-full h-80 bg-indigo-950/30 border border-white/10 rounded-3xl p-8 text-lg focus:ring-2 focus:ring-amber-500/50 outline-none resize-none text-indigo-100" />
+                  <button onClick={analyzeWithGemini} disabled={isAnalyzing || !diaryEntry.trim()} className="w-full py-6 bg-amber-500 text-[#1E1B4B] font-black rounded-3xl flex items-center justify-center gap-3 uppercase tracking-widest text-lg transition-all active:scale-95 disabled:opacity-50">
                     {isAnalyzing ? <Loader2 className="w-6 h-6 animate-spin" /> : <><Sparkles className="w-6 h-6" /> Reveal Patterns</>}
                   </button>
                 </div>
               ) : (
                 <div className="h-[600px] overflow-y-auto space-y-4 pr-2 custom-scrollbar">
                   {diaryHistory.map(item => (
-                    <div key={item.id} className="bg-white/5 border border-white/10 rounded-3xl p-6 group transition-all hover:bg-white/[0.08]">
+                    <div key={item.id} className="bg-white/5 border border-white/10 rounded-3xl p-6 transition-all hover:bg-white/[0.08]">
                       <div className="flex items-center gap-3 mb-4">
-                        <div className="w-8 h-8 rounded-lg flex items-center justify-center text-white" style={{ backgroundColor: getDomainInfo(item.topDomain)?.color || '#6366F1' }}>{getDomainInfo(item.topDomain)?.icon || <Sparkle className="w-4 h-4" />}</div>
                         <span className="text-[10px] font-black text-amber-500 uppercase">{String(item.date)}</span>
                         <span className="text-[10px] text-indigo-300 uppercase font-black">{String(item.topDomain || "General")}</span>
                       </div>
-                      <p className="text-indigo-100/80 italic line-clamp-3 mb-2 font-medium leading-relaxed">"{String(item.text || "")}"</p>
+                      <p className="text-indigo-100/80 italic line-clamp-3 font-medium">"{String(item.text || "")}"</p>
                     </div>
                   ))}
-                  {diaryHistory.length === 0 && <div className="text-center py-20 opacity-20 font-black uppercase tracking-widest">No history yet</div>}
                 </div>
               )}
             </div>
 
             <div className="w-full lg:w-[440px]">
               {diaryAnalysis && !historyOpen ? (
-                <div className="bg-white rounded-[40px] shadow-2xl text-[#1E1B4B] overflow-hidden animate-in slide-in-from-right-6 duration-500">
+                <div className="bg-white rounded-[40px] text-[#1E1B4B] overflow-hidden shadow-2xl">
                   <div className="h-2 w-full" style={{ backgroundColor: getDomainInfo(diaryAnalysis.topDomain)?.color || '#6366F1' }}></div>
                   <div className="p-8 space-y-8">
                     <div className="flex items-center gap-4">
@@ -251,9 +215,7 @@ export default function App() {
                     <div className="space-y-6">
                        <div><h4 className="text-[10px] font-black uppercase text-indigo-300 mb-2 tracking-widest">Synthesis</h4><p className="text-md font-bold leading-snug">{diaryAnalysis.summary}</p></div>
                        <div className="bg-indigo-50 p-4 rounded-2xl"><h4 className="text-[10px] font-black uppercase text-indigo-300 mb-2 tracking-widest">Emotional Undertone</h4><p className="text-sm font-medium text-indigo-900">{diaryAnalysis.emotionalUndertone}</p></div>
-                       <div className="border-l-4 border-indigo-200 pl-4"><h4 className="text-[10px] font-black uppercase text-indigo-300 mb-2 tracking-widest">Pattern Diagnosis</h4><p className="text-sm font-bold text-indigo-950">{diaryAnalysis.patternDiagnosis}</p></div>
-                       <div className="bg-amber-50 p-4 rounded-2xl border border-amber-100"><h4 className="text-[10px] font-black uppercase text-amber-600 mb-2 tracking-widest">Worth Considering</h4><p className="text-sm font-medium text-slate-700">{diaryAnalysis.worthConsidering}</p></div>
-                       <div className="bg-amber-500 border-2 border-amber-600 rounded-[30px] p-6 shadow-lg transition-transform hover:scale-[1.02]">
+                       <div className="bg-amber-500 border-2 border-amber-600 rounded-[30px] p-6 shadow-lg">
                           <div className="flex items-center gap-2 mb-2"><HelpCircle className="w-4 h-4 text-[#1E1B4B]" /><span className="text-[10px] font-black uppercase text-[#1E1B4B] tracking-widest opacity-60">Master Question</span></div>
                           <p className="text-xl font-black leading-tight italic text-[#1E1B4B]">"{diaryAnalysis.coachingQuestion}"</p>
                        </div>
@@ -269,9 +231,9 @@ export default function App() {
       </main>
 
       {showGachaResult && gachaResult && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-[#0F172A]/90 backdrop-blur-2xl animate-in fade-in duration-300">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-[#0F172A]/90 backdrop-blur-2xl">
           <div className="absolute inset-0" onClick={() => setShowGachaResult(false)}></div>
-          <div className="relative bg-white w-full max-w-md rounded-[50px] overflow-hidden shadow-2xl animate-in zoom-in-95 duration-500">
+          <div className="relative bg-white w-full max-w-md rounded-[50px] overflow-hidden shadow-2xl">
             <div className="h-6 w-full" style={{ backgroundColor: gachaResult.color }}></div>
             <div className="p-10 text-[#1E1B4B]">
               <div className="flex items-center gap-5 mb-8">
@@ -280,7 +242,6 @@ export default function App() {
               </div>
               <div className="bg-slate-50 p-8 rounded-[40px] border-2 border-dashed border-slate-200 mb-8"><p className="text-xl font-bold leading-snug italic">"{gachaResult.question}"</p></div>
               <button onClick={() => { setJournalingPrompt(gachaResult.question); setShowGachaResult(false); setActiveTab('diary'); }} className="w-full py-5 bg-amber-500 text-[#1E1B4B] font-black rounded-3xl uppercase shadow-xl tracking-widest flex items-center justify-center gap-2 hover:bg-amber-600 transition-all active:scale-95">Answer in Diary <ArrowRight className="w-4 h-4" /></button>
-              <button onClick={() => setShowGachaResult(false)} className="w-full mt-4 text-[10px] font-black uppercase opacity-40 hover:opacity-70 transition-opacity">Keep Spinning</button>
             </div>
           </div>
         </div>

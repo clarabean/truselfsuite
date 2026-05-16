@@ -1,48 +1,33 @@
 'use client';
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { 
   PenLine, Sparkles, History, X, TrendingUp, Trophy, Sparkle, 
-  Wallet, Zap, HelpCircle, Users, Heart, Loader2, Cloud, 
-  Gamepad2, ArrowRight, BrainCircuit, Activity, Lightbulb, Info
+  Wallet, Zap, HelpCircle, Users, Heart, Loader2,
+  ArrowRight, Info
 } from 'lucide-react';
 
 // Firebase Imports
-import { initializeApp } from 'firebase/app';
-import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
-import { getFirestore, collection, onSnapshot, addDoc, doc, setDoc } from 'firebase/firestore';
+import { initializeApp, getApps, getApp } from 'firebase/app';
+import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
+import { getFirestore, collection, onSnapshot, addDoc } from 'firebase/firestore';
 
-// --- Global Environment Handling ---
-// Safe access using globalThis with type casting to bypass strict TypeScript checks on Vercel
-const getFirebaseConfig = () => {
-  const g = typeof globalThis !== 'undefined' ? (globalThis as any) : {};
-  if (typeof g.__firebase_config !== 'undefined' && g.__firebase_config) {
-    try {
-      return JSON.parse(g.__firebase_config);
-    } catch (e) {
-      console.error("Failed to parse local environment firebase config:", e);
-    }
-  }
-  return {
-    apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
-    authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
-    projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
-    storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
-    messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
-    appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
-  };
+// --- Production Firebase Configuration ---
+const firebaseConfig = {
+  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
+  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
+  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
+  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
+  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
 };
 
-const firebaseConfig = getFirebaseConfig();
-const appId = typeof (globalThis as any).__app_id !== 'undefined' && (globalThis as any).__app_id 
-  ? (globalThis as any).__app_id 
-  : 'truself-suite';
-
-const app = initializeApp(firebaseConfig);
+const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 const auth = getAuth(app);
 const db = getFirestore(app);
+const appId = 'truself-suite';
 
-// --- DATASET: 52+ Original Coaching Questions ---
+// --- DATASET: Original Coaching Questions ---
 const DOMAINS: Record<string, { title: string, color: string, icon: React.ReactNode, questions: string[] }> = {
   ADVANCEMENT: { 
     title: "Advancement", color: "#6366F1", icon: <TrendingUp className="w-5 h-5" />, 
@@ -160,20 +145,12 @@ export default function App() {
 
   // --- Auth Setup ---
   useEffect(() => {
-    const initAuth = async () => {
-      try {
-        const g = typeof globalThis !== 'undefined' ? (globalThis as any) : {};
-        if (typeof g.__initial_auth_token !== 'undefined' && g.__initial_auth_token) {
-          await signInWithCustomToken(auth, g.__initial_auth_token);
-        } else {
-          await signInAnonymously(auth);
-        }
-      } catch (err) {
+    signInAnonymously(auth)
+      .then((cred) => setUser(cred.user))
+      .catch((err) => {
         console.error("Auth Error", err);
         setErrorMessage("Failed to authenticate session.");
-      }
-    };
-    initAuth();
+      });
     const unsubscribe = onAuthStateChanged(auth, setUser);
     return () => unsubscribe();
   }, []);
@@ -183,7 +160,8 @@ export default function App() {
     if (!user) return;
     const entriesCol = collection(db, 'artifacts', appId, 'users', user.uid, 'entries');
     const unsubscribe = onSnapshot(entriesCol, (snap) => {
-      const data = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      // Cast map return explicitly as any to bypass strict TypeScript checks
+      const data: any[] = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setDiaryHistory(data.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0)));
     }, (error) => {
       console.error("Firestore Listen Error", error);
@@ -218,95 +196,22 @@ export default function App() {
     }, 1800);
   }, [isSpinning]);
 
-  // --- Dual-Mode Fetch: Local Route Proxy with Direct AI Studio Fallback ---
   const analyzeWithGemini = async () => {
     if (!diaryEntry.trim() || !user) return;
     setIsAnalyzing(true);
     setErrorMessage(null);
 
     try {
-      let aiData;
+      const res = await fetch('/api/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ diaryEntry })
+      });
 
-      // 1. Try local server-side endpoint first (for production Vercel environments)
-      try {
-        const res = await fetch('/api/analyze', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ diaryEntry })
-        });
+      const aiData = await res.json();
+      if (!res.ok) throw new Error(aiData.error || "Backend server encountered an issue.");
 
-        if (res.ok) {
-          aiData = await res.json();
-          if (aiData.error) throw new Error(aiData.error);
-        } else if (res.status === 404 || res.status === 405) {
-          // If 404/405, we are likely in the Canvas Preview or a mock deployment environment.
-          // Force a direct API fallback!
-          throw new Error("API_FALLBACK_REQUIRED");
-        } else {
-          const errText = await res.text();
-          throw new Error(errText || "Backend server encountered an issue.");
-        }
-      } catch (localErr: any) {
-        // If local proxy fetch fails or isn't hosted, run a Direct call with exponential backoff on client side
-        if (localErr.message === "API_FALLBACK_REQUIRED" || localErr.message.includes("Failed to fetch") || localErr.message.includes("Failed to parse URL")) {
-          
-          const apiKey = ""; // Canvas secures and auto-injects this at runtime
-          const systemPrompt = `You are the "TruSelf Master Behavioral Coach". Respond ONLY in valid JSON: {"summary": "deep synthesis (2 sentences)", "topDomain": "TruSelf Domain", "emotionalUndertone": "emotions masked", "patternDiagnosis": "Identify life pattern", "worthConsidering": "Strategic advice", "coachingQuestion": "sharp question"}`;
-
-          const fetchDirectWithRetry = async (retries = 5, delay = 1000): Promise<any> => {
-            try {
-              // Standard client-side fallback endpoint
-              const directRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ 
-                  contents: [{ parts: [{ text: systemPrompt + "\n\nUser Entry: " + diaryEntry }] }],
-                  generationConfig: { 
-                    responseMimeType: "application/json",
-                    responseSchema: {
-                      type: "OBJECT",
-                      properties: {
-                        summary: { type: "STRING" },
-                        topDomain: { type: "STRING" },
-                        emotionalUndertone: { type: "STRING" },
-                        patternDiagnosis: { type: "STRING" },
-                        worthConsidering: { type: "STRING" },
-                        coachingQuestion: { type: "STRING" }
-                      },
-                      required: ["summary", "topDomain", "emotionalUndertone", "patternDiagnosis", "worthConsidering", "coachingQuestion"]
-                    }
-                  } 
-                })
-              });
-
-              if (!directRes.ok) {
-                if (directRes.status === 429 && retries > 0) {
-                  await new Promise(resolve => setTimeout(resolve, delay));
-                  return fetchDirectWithRetry(retries - 1, delay * 2);
-                }
-                throw new Error("Direct API connection declined.");
-              }
-
-              const result = await directRes.json();
-              const textResponse = result.candidates?.[0]?.content?.parts?.[0]?.text;
-              if (!textResponse) throw new Error("Connection failed");
-              return JSON.parse(textResponse);
-            } catch (e) {
-              if (retries > 0) {
-                await new Promise(resolve => setTimeout(resolve, delay));
-                return fetchDirectWithRetry(retries - 1, delay * 2);
-              }
-              throw e;
-            }
-          };
-
-          aiData = await fetchDirectWithRetry();
-        } else {
-          throw localErr;
-        }
-      }
-
-      // Save valid outcome to user history
+      // Save outcome directly to user history
       const newEntry = { 
         ...aiData, 
         timestamp: Date.now(), 
@@ -320,16 +225,16 @@ export default function App() {
       setJournalingPrompt(null);
     } catch (e: any) { 
       console.error(e);
-      setErrorMessage(e.message || "The Sieve encountered an issue. Please try again in a moment.");
+      setErrorMessage(e.message || "The Sieve encountered an issue. Please try again.");
     } finally { 
       setIsAnalyzing(false); 
     }
   };
 
-  const getDomainInfo = (name: string | null) => {
+  const getDomainInfo = (name: string | null | undefined) => {
     if (!name) return null;
     const key = name.toUpperCase().replace(/[\s/]/g, '_');
-    return DOMAINS[key] || null;
+    return (DOMAINS as any)[key] || null;
   };
 
   return (
@@ -363,16 +268,15 @@ export default function App() {
                     {balls.map((b: any) => (
                       <div 
                         key={b.id} 
-                        className={`absolute ${isSpinning ? 'animate-gacha-bounce' : ''}`} 
+                        className={`absolute ${isSpinning ? 'animate-gacha-shake' : ''}`} 
                         style={{ 
                           left: `${b.x}%`, 
                           top: `${b.y}%`, 
-                          animationDelay: `${b.delay}s`,
-                          animationDuration: `${0.6 + (b.id % 5) * 0.1}s` // Randomized speed distribution
+                          animationDelay: `${b.delay}s`
                         }} 
                       >
                         <div 
-                          className="w-8 h-8 rounded-full shadow-md border border-white/25 transition-transform duration-500" 
+                          className="w-7 h-7 rounded-full shadow-md border border-white/20 transition-transform duration-500" 
                           style={{ 
                             backgroundColor: b.color, 
                             transform: `rotate(${b.rotation}deg)` 
@@ -536,11 +440,22 @@ export default function App() {
       <footer className="py-12 opacity-30 text-center text-[10px] font-black uppercase tracking-widest">Live Your Mark & ECI © 2026</footer>
       
       <style dangerouslySetInnerHTML={{ __html: `
-        @keyframes gacha-bounce { 
-          0%, 100% { transform: translateY(0); } 
-          50% { transform: translateY(-16px); } 
+        @keyframes gacha-shake {
+          0% { transform: translate(0, 0) rotate(0deg); }
+          10% { transform: translate(-3px, -6px) rotate(-6deg); }
+          20% { transform: translate(6px, 3px) rotate(9deg); }
+          30% { transform: translate(-6px, -3px) rotate(-12deg); }
+          40% { transform: translate(4px, 7px) rotate(6deg); }
+          50% { transform: translate(-7px, -4px) rotate(-9deg); }
+          60% { transform: translate(3px, 6px) rotate(3deg); }
+          70% { transform: translate(-4px, -7px) rotate(-6deg); }
+          80% { transform: translate(7px, -3px) rotate(12deg); }
+          90% { transform: translate(-3px, 4px) rotate(-3deg); }
+          100% { transform: translate(0, 0) rotate(0deg); }
+        }
+        .animate-gacha-shake { 
+          animation: gacha-shake 0.35s infinite linear; 
         } 
-        .animate-gacha-bounce { animation: gacha-bounce infinite ease-in-out; } 
         .custom-scrollbar::-webkit-scrollbar { width: 4px; } 
         .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 10px; }
       ` }} />

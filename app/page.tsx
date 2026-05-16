@@ -15,9 +15,13 @@ import { getFirestore, collection, onSnapshot, addDoc, doc, setDoc } from 'fireb
 // --- Global Environment Handling ---
 // Safe access using globalThis with type casting to bypass strict TypeScript checks on Vercel
 const getFirebaseConfig = () => {
-  const g = globalThis as any;
+  const g = typeof globalThis !== 'undefined' ? (globalThis as any) : {};
   if (typeof g.__firebase_config !== 'undefined' && g.__firebase_config) {
-    return JSON.parse(g.__firebase_config);
+    try {
+      return JSON.parse(g.__firebase_config);
+    } catch (e) {
+      console.error("Failed to parse local environment firebase config:", e);
+    }
   }
   return {
     apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
@@ -30,13 +34,16 @@ const getFirebaseConfig = () => {
 };
 
 const firebaseConfig = getFirebaseConfig();
-const appId = typeof (globalThis as any).__app_id !== 'undefined' ? (globalThis as any).__app_id : 'truself-suite';
+const appId = typeof (globalThis as any).__app_id !== 'undefined' && (globalThis as any).__app_id 
+  ? (globalThis as any).__app_id 
+  : 'truself-suite';
+
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
 
 // --- DATASET: 52+ Original Coaching Questions ---
-const DOMAINS = {
+const DOMAINS: Record<string, { title: string, color: string, icon: React.ReactNode, questions: string[] }> = {
   ADVANCEMENT: { 
     title: "Advancement", color: "#6366F1", icon: <TrendingUp className="w-5 h-5" />, 
     questions: [
@@ -136,26 +143,26 @@ const DOMAINS = {
 };
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState('spin');
-  const [user, setUser] = useState(null);
-  const [isSpinning, setIsSpinning] = useState(false);
-  const [showGachaResult, setShowGachaResult] = useState(false);
-  const [gachaResult, setGachaResult] = useState(null);
-  const [leverAngle, setLeverAngle] = useState(0);
-  const [balls, setBalls] = useState([]);
-  const [diaryEntry, setDiaryEntry] = useState('');
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [diaryAnalysis, setDiaryAnalysis] = useState(null);
-  const [diaryHistory, setDiaryHistory] = useState([]);
-  const [historyOpen, setHistoryOpen] = useState(false);
-  const [journalingPrompt, setJournalingPrompt] = useState(null);
-  const [errorMessage, setErrorMessage] = useState(null);
+  const [activeTab, setActiveTab] = useState<string>('spin');
+  const [user, setUser] = useState<any>(null);
+  const [isSpinning, setIsSpinning] = useState<boolean>(false);
+  const [showGachaResult, setShowGachaResult] = useState<boolean>(false);
+  const [gachaResult, setGachaResult] = useState<any>(null);
+  const [leverAngle, setLeverAngle] = useState<number>(0);
+  const [balls, setBalls] = useState<any[]>([]);
+  const [diaryEntry, setDiaryEntry] = useState<string>('');
+  const [isAnalyzing, setIsAnalyzing] = useState<boolean>(false);
+  const [diaryAnalysis, setDiaryAnalysis] = useState<any>(null);
+  const [diaryHistory, setDiaryHistory] = useState<any[]>([]);
+  const [historyOpen, setHistoryOpen] = useState<boolean>(false);
+  const [journalingPrompt, setJournalingPrompt] = useState<string | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   // --- Auth Setup ---
   useEffect(() => {
     const initAuth = async () => {
       try {
-        const g = globalThis as any;
+        const g = typeof globalThis !== 'undefined' ? (globalThis as any) : {};
         if (typeof g.__initial_auth_token !== 'undefined' && g.__initial_auth_token) {
           await signInWithCustomToken(auth, g.__initial_auth_token);
         } else {
@@ -239,14 +246,14 @@ export default function App() {
           const errText = await res.text();
           throw new Error(errText || "Backend server encountered an issue.");
         }
-      } catch (localErr) {
+      } catch (localErr: any) {
         // If local proxy fetch fails or isn't hosted, run a Direct call with exponential backoff on client side
         if (localErr.message === "API_FALLBACK_REQUIRED" || localErr.message.includes("Failed to fetch") || localErr.message.includes("Failed to parse URL")) {
           
           const apiKey = ""; // Canvas secures and auto-injects this at runtime
           const systemPrompt = `You are the "TruSelf Master Behavioral Coach". Respond ONLY in valid JSON: {"summary": "deep synthesis (2 sentences)", "topDomain": "TruSelf Domain", "emotionalUndertone": "emotions masked", "patternDiagnosis": "Identify life pattern", "worthConsidering": "Strategic advice", "coachingQuestion": "sharp question"}`;
 
-          const fetchDirectWithRetry = async (retries = 5, delay = 1000) => {
+          const fetchDirectWithRetry = async (retries = 5, delay = 1000): Promise<any> => {
             try {
               // Standard client-side fallback endpoint
               const directRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, {
@@ -311,7 +318,7 @@ export default function App() {
       setDiaryAnalysis(newEntry);
       setDiaryEntry('');
       setJournalingPrompt(null);
-    } catch (e) { 
+    } catch (e: any) { 
       console.error(e);
       setErrorMessage(e.message || "The Sieve encountered an issue. Please try again in a moment.");
     } finally { 
@@ -319,7 +326,7 @@ export default function App() {
     }
   };
 
-  const getDomainInfo = (name) => {
+  const getDomainInfo = (name: string | null) => {
     if (!name) return null;
     const key = name.toUpperCase().replace(/[\s/]/g, '_');
     return DOMAINS[key] || null;
@@ -353,7 +360,7 @@ export default function App() {
               <div className="w-full h-full bg-white rounded-[50px] shadow-[0_30px_60px_-12px_rgba(0,0,0,0.8)] border-[12px] border-[#1E1B4B] overflow-hidden flex flex-col relative">
                 <div className="relative h-[58%] bg-[#F8FAFC] border-b-[12px] border-[#1E1B4B] overflow-hidden">
                   <div className="absolute left-4 right-4 top-4 bottom-4 rounded-[40px] bg-slate-200/30 shadow-inner overflow-hidden">
-                    {balls.map(b => (
+                    {balls.map((b: any) => (
                       <div 
                         key={b.id} 
                         className={`absolute ${isSpinning ? 'animate-gacha-bounce' : ''}`} 
@@ -448,7 +455,7 @@ export default function App() {
                 </div>
               ) : (
                 <div className="h-[600px] overflow-y-auto space-y-4 pr-2 custom-scrollbar">
-                  {diaryHistory.map(item => (
+                  {diaryHistory.map((item: any) => (
                     <div key={item.id} className="bg-white/5 border border-white/10 rounded-3xl p-6 group transition-all hover:bg-white/[0.08]">
                       <div className="flex items-center gap-3 mb-4">
                         <div className="w-8 h-8 rounded-lg flex items-center justify-center text-white" style={{ backgroundColor: getDomainInfo(item.topDomain)?.color || '#6366F1' }}>

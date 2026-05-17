@@ -3,56 +3,93 @@ import { NextResponse } from 'next/server';
 export async function POST(req) {
   try {
     const { diaryEntry } = await req.json();
-    const apiKey = process.env.GEMINI_API_KEY;
+    const apiKey = process.env.GEMINI_API_KEY; 
 
     if (!apiKey) {
-      return NextResponse.json({ error: "Server Error: GEMINI_API_KEY is missing in Vercel settings." }, { status: 500 });
+      return NextResponse.json(
+        { error: "Server Error: GEMINI_API_KEY is missing in Vercel settings." }, 
+        { status: 500 }
+      );
     }
 
-    const systemPrompt = `You are the "TruSelf Master Behavioral Coach". You specialize in identifying deep cognitive patterns, emotional undertones, and "life-scripts" that hold people back.
+    const systemPrompt = `You are the "TruSelf Master Behavioral Coach". You specialize in identifying deep cognitive patterns, emotional undertones, and "life-scripts" that hold people back. 
     
     INSTRUCTIONS:
     - Analyze the user entry for hidden patterns.
-    - Respond ONLY in valid JSON with no extra text, no markdown, no code blocks.
+    - Respond ONLY in valid JSON.
     
     JSON SCHEMA:
     {
       "summary": "deep synthesis (2 sentences)",
-      "topDomain": "The TruSelf Domain this relates to most: Advancement, Achievement, Creation/Choice, Resource Gaining, Vitality, Dreams/Passions, People, or Connection",
+      "topDomain": "The TruSelf Domain this relates to",
       "emotionalUndertone": "the emotions masked behind the words",
       "patternDiagnosis": "Identify the recurring life pattern",
       "worthConsidering": "Strategic advice for the user",
       "coachingQuestion": "one sharp, deep question to leave them with"
     }`;
 
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
+    // A robust list of endpoints and models to try. 
+    // This handles any regional constraints, legacy accounts, or upgraded pay-as-you-go keys.
+    const configurations = [
+      // 1. Try Gemini 2.5 Flash on v1beta (Recommended default)
       {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: systemPrompt + "\n\nUser Entry: " + diaryEntry }] }]
-        })
+        url: `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
+        body: {
+          contents: [{ parts: [{ text: systemPrompt + "\n\nUser Entry: " + diaryEntry }] }],
+          generationConfig: { responseMimeType: "application/json" }
+        }
+      },
+      // 2. Try Gemini 1.5 Flash on Stable production v1 (Avoids v1beta deprecation issues)
+      {
+        url: `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
+        body: {
+          contents: [{ parts: [{ text: systemPrompt + "\n\nUser Entry: " + diaryEntry }] }],
+          generationConfig: { response_mime_type: "application/json" } 
+        }
+      },
+      // 3. Try Gemini 1.5 Flash Latest on Stable production v1
+      {
+        url: `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`,
+        body: {
+          contents: [{ parts: [{ text: systemPrompt + "\n\nUser Entry: " + diaryEntry }] }],
+          generationConfig: { response_mime_type: "application/json" } 
+        }
+      },
+      // 4. Try Gemini 2.0 Flash on v1beta
+      {
+        url: `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
+        body: {
+          contents: [{ parts: [{ text: systemPrompt + "\n\nUser Entry: " + diaryEntry }] }],
+          generationConfig: { responseMimeType: "application/json" }
+        }
       }
-    );
+    ];
 
-    const data = await response.json();
+    let lastError = null;
 
-    if (!response.ok) {
-      console.error("Gemini API Error:", data.error?.message);
-      return NextResponse.json({ error: data.error?.message || "Google is busy. Try again in 60 seconds." }, { status: response.status });
-    }
+    for (let i = 0; i < configurations.length; i++) {
+      try {
+        const config = configurations[i];
+        const response = await fetch(config.url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(config.body)
+        });
 
-    const textResponse = data.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (!textResponse) {
-      return NextResponse.json({ error: "Empty response from AI." }, { status: 500 });
-    }
+        const data = await response.json();
 
-    const cleaned = textResponse.trim().replace(/^```json|^```|```$/g, '').trim();
-    return NextResponse.json(JSON.parse(cleaned));
+        if (!response.ok) {
+          console.warn(`Configuration ${i + 1} bypassed:`, data.error?.message || response.statusText);
+          lastError = data.error?.message || `Status ${response.status}`;
+          continue; // Move to next fallback
+        }
 
-  } catch (error) {
-    console.error("Server error:", error);
-    return NextResponse.json({ error: "The Sieve encountered a technical glitch." }, { status: 500 });
-  }
-}
+        const textResponse = data.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (!textResponse) {
+          lastError = "Empty response returned from Google AI Studio.";
+          continue;
+        }
+
+        // Clean JSON markdown wraps returned by some fallback engines
+        const cleanText = textResponse.trim()
+          .replace(/^

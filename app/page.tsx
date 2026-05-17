@@ -12,20 +12,39 @@ import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
 import { getFirestore, collection, onSnapshot, addDoc } from 'firebase/firestore';
 
-// --- Production Firebase Configuration ---
-const firebaseConfig = {
-  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
-  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
-  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
-  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
-  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
+// --- Production Firebase Configuration (with dynamic environment fallbacks) ---
+const getFirebaseConfig = () => {
+  if (typeof window !== 'undefined') {
+    const g = window as any;
+    if (typeof g.__firebase_config !== 'undefined' && g.__firebase_config) {
+      try {
+        return typeof g.__firebase_config === 'string' 
+          ? JSON.parse(g.__firebase_config) 
+          : g.__firebase_config;
+      } catch (e) {
+        console.error("Failed to parse dynamic firebase config", e);
+      }
+    }
+  }
+  return {
+    apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
+    authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
+    projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
+    storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
+    messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
+    appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
+  };
 };
 
+const firebaseConfig = getFirebaseConfig();
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 const auth = getAuth(app);
 const db = getFirestore(app);
-const appId = 'truself-suite';
+
+// Dynamically resolve appId matching platform security rules
+const appId = typeof window !== 'undefined' && typeof (window as any).__app_id !== 'undefined' 
+  ? (window as any).__app_id 
+  : 'truself-suite';
 
 // --- DATASET: Original Coaching Questions ---
 const DOMAINS: Record<string, { title: string, color: string, icon: React.ReactNode, questions: string[] }> = {
@@ -160,24 +179,41 @@ export default function App() {
     if (!user) return;
     const entriesCol = collection(db, 'artifacts', appId, 'users', user.uid, 'entries');
     const unsubscribe = onSnapshot(entriesCol, (snap) => {
-      // Cast map return explicitly as any to bypass strict TypeScript checks
-      const data: any[] = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setDiaryHistory(data.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0)));
+      const data = snap.docs.map((doc) => {
+        const docData = doc.data() as Record<string, any>;
+        return {
+          id: doc.id,
+          timestamp: docData.timestamp ?? 0,
+          date: docData.date ?? '',
+          text: docData.text ?? '',
+          topDomain: docData.topDomain ?? 'General',
+          summary: docData.summary ?? '',
+          emotionalUndertone: docData.emotionalUndertone ?? '',
+          patternDiagnosis: docData.patternDiagnosis ?? '',
+          worthConsidering: docData.worthConsidering ?? '',
+          coachingQuestion: docData.coachingQuestion ?? ''
+        };
+      });
+
+      setDiaryHistory(data.sort((a, b) => b.timestamp - a.timestamp));
     }, (error) => {
       console.error("Firestore Listen Error", error);
     });
     return () => unsubscribe();
   }, [user]);
 
-  // --- Initialize Gacha Balls ---
+  // --- Initialize Gacha Balls with Trajectories ---
   useEffect(() => {
+    const trajectories = ['animate-swirl-left', 'animate-swirl-right', 'animate-swirl-mid'];
     setBalls(Array.from({ length: 24 }).map((_, i) => ({
       id: i, 
       x: 10 + Math.random() * 65, 
       y: 40 + Math.random() * 30,
       color: Object.values(DOMAINS)[Math.floor(Math.random() * 8)].color,
       rotation: Math.random() * 360,
-      delay: Math.random() * 0.4
+      delay: Math.random() * 0.35,
+      duration: `${0.65 + Math.random() * 0.3}s`,
+      trajectoryClass: trajectories[i % trajectories.length]
     })));
   }, []);
 
@@ -211,7 +247,6 @@ export default function App() {
       const aiData = await res.json();
       if (!res.ok) throw new Error(aiData.error || "Backend server encountered an issue.");
 
-      // Save outcome directly to user history
       const newEntry = { 
         ...aiData, 
         timestamp: Date.now(), 
@@ -219,10 +254,18 @@ export default function App() {
         text: diaryEntry 
       };
       
-      await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'entries'), newEntry);
+      // 1. Instantly update the UI with your pattern analysis!
       setDiaryAnalysis(newEntry);
       setDiaryEntry('');
       setJournalingPrompt(null);
+
+      // 2. Perform the database save in the background asynchronously. 
+      // Even if Firestore is slow or encounters credentials setup delays, it will NEVER hang the screen.
+      addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'entries'), newEntry)
+        .catch((err) => {
+          console.error("Firestore Background Save Delayed/Blocked:", err);
+        });
+
     } catch (e: any) { 
       console.error(e);
       setErrorMessage(e.message || "The Sieve encountered an issue. Please try again.");
@@ -268,20 +311,25 @@ export default function App() {
                     {balls.map((b: any) => (
                       <div 
                         key={b.id} 
-                        className={`absolute ${isSpinning ? 'animate-gacha-shake' : ''}`} 
+                        className={`absolute ${isSpinning ? b.trajectoryClass : ''}`} 
                         style={{ 
                           left: `${b.x}%`, 
                           top: `${b.y}%`, 
-                          animationDelay: `${b.delay}s`
+                          animationDelay: `${b.delay}s`,
+                          animationDuration: b.duration
                         }} 
                       >
+                        {/* 3D Glossy Marble Render */}
                         <div 
-                          className="w-7 h-7 rounded-full shadow-md border border-white/20 transition-transform duration-500" 
+                          className="w-8 h-8 rounded-full shadow-lg border border-white/20 relative overflow-hidden transition-transform duration-500" 
                           style={{ 
-                            backgroundColor: b.color, 
+                            background: `radial-gradient(circle at 35% 35%, ${b.color} 10%, #0F172A 100%)`,
                             transform: `rotate(${b.rotation}deg)` 
                           }} 
-                        />
+                        >
+                          {/* Inside Gloss Highlight Accent */}
+                          <div className="absolute top-1 left-1.5 w-2 h-1 bg-white/50 rounded-full rotate-[-15deg] filter blur-[0.2px]"></div>
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -440,22 +488,28 @@ export default function App() {
       <footer className="py-12 opacity-30 text-center text-[10px] font-black uppercase tracking-widest">Live Your Mark & ECI © 2026</footer>
       
       <style dangerouslySetInnerHTML={{ __html: `
-        @keyframes gacha-shake {
-          0% { transform: translate(0, 0) rotate(0deg); }
-          10% { transform: translate(-3px, -6px) rotate(-6deg); }
-          20% { transform: translate(6px, 3px) rotate(9deg); }
-          30% { transform: translate(-6px, -3px) rotate(-12deg); }
-          40% { transform: translate(4px, 7px) rotate(6deg); }
-          50% { transform: translate(-7px, -4px) rotate(-9deg); }
-          60% { transform: translate(3px, 6px) rotate(3deg); }
-          70% { transform: translate(-4px, -7px) rotate(-6deg); }
-          80% { transform: translate(7px, -3px) rotate(12deg); }
-          90% { transform: translate(-3px, 4px) rotate(-3deg); }
-          100% { transform: translate(0, 0) rotate(0deg); }
+        @keyframes swirl-left {
+          0%, 100% { transform: translate(0, 0); }
+          30% { transform: translate(-45px, -65px) rotate(120deg); }
+          60% { transform: translate(20px, -115px) rotate(240deg); }
+          80% { transform: translate(-15px, -45px) rotate(300deg); }
         }
-        .animate-gacha-shake { 
-          animation: gacha-shake 0.35s infinite linear; 
-        } 
+        @keyframes swirl-right {
+          0%, 100% { transform: translate(0, 0); }
+          30% { transform: translate(45px, -55px) rotate(-120deg); }
+          60% { transform: translate(-25px, -125px) rotate(-240deg); }
+          80% { transform: translate(20px, -55px) rotate(-300deg); }
+        }
+        @keyframes swirl-mid {
+          0%, 100% { transform: translate(0, 0); }
+          35% { transform: translate(10px, -85px) rotate(180deg); }
+          70% { transform: translate(-10px, -135px) rotate(360deg); }
+          90% { transform: translate(5px, -35px) rotate(480deg); }
+        }
+        .animate-swirl-left { animation: swirl-left infinite ease-in-out; }
+        .animate-swirl-right { animation: swirl-right infinite ease-in-out; }
+        .animate-swirl-mid { animation: swirl-mid infinite ease-in-out; }
+
         .custom-scrollbar::-webkit-scrollbar { width: 4px; } 
         .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 10px; }
       ` }} />

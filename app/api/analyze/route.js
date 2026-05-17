@@ -28,10 +28,7 @@ export async function POST(req) {
       "coachingQuestion": "one sharp, deep question to leave them with"
     }`;
 
-    // A robust list of endpoints and models to try. 
-    // This handles any regional constraints, legacy accounts, or upgraded pay-as-you-go keys.
     const configurations = [
-      // 1. Try Gemini 2.5 Flash on v1beta (Recommended default)
       {
         url: `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
         body: {
@@ -39,7 +36,6 @@ export async function POST(req) {
           generationConfig: { responseMimeType: "application/json" }
         }
       },
-      // 2. Try Gemini 1.5 Flash on Stable production v1 (Avoids v1beta deprecation issues)
       {
         url: `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
         body: {
@@ -47,7 +43,6 @@ export async function POST(req) {
           generationConfig: { response_mime_type: "application/json" } 
         }
       },
-      // 3. Try Gemini 1.5 Flash Latest on Stable production v1
       {
         url: `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`,
         body: {
@@ -55,7 +50,6 @@ export async function POST(req) {
           generationConfig: { response_mime_type: "application/json" } 
         }
       },
-      // 4. Try Gemini 2.0 Flash on v1beta
       {
         url: `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
         body: {
@@ -81,7 +75,7 @@ export async function POST(req) {
         if (!response.ok) {
           console.warn(`Configuration ${i + 1} bypassed:`, data.error?.message || response.statusText);
           lastError = data.error?.message || `Status ${response.status}`;
-          continue; // Move to next fallback
+          continue;
         }
 
         const textResponse = data.candidates?.[0]?.content?.parts?.[0]?.text;
@@ -90,13 +84,16 @@ export async function POST(req) {
           continue;
         }
 
-        // Clean JSON markdown wraps returned by some fallback engines using safe hex codes (\x60 = backtick)
+        // Clean JSON markdown wraps safely using hex backtick escapes
         const cleanText = textResponse.trim()
           .replace(/^\x60{3}(?:json)?\s*/i, "")
           .replace(/\s*\x60{3}$/, "")
           .trim();
 
-        return NextResponse.json(JSON.parse(cleanText));
+        // Safely parse it locally before transmitting to verify integrity
+        const parsedJson = JSON.parse(cleanText);
+        return NextResponse.json(parsedJson);
+
       } catch (err) {
         console.error(`Configuration ${i + 1} exception:`, err);
         lastError = err instanceof Error ? err.message : String(err);

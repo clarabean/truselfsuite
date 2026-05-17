@@ -90,6 +90,25 @@ export async function POST(req) {
           continue;
         }
 
-        // Clean JSON markdown wraps returned by some fallback engines
+        // Clean JSON markdown wraps returned by some fallback engines using safe hex codes (\x60 = backtick)
         const cleanText = textResponse.trim()
-          .replace(/^
+          .replace(/^\x60{3}(?:json)?\s*/i, "")
+          .replace(/\s*\x60{3}$/, "")
+          .trim();
+
+        return NextResponse.json(JSON.parse(cleanText));
+      } catch (err) {
+        console.error(`Configuration ${i + 1} exception:`, err);
+        lastError = err instanceof Error ? err.message : String(err);
+      }
+    }
+
+    return NextResponse.json({ 
+      error: `Could not configure secure channel with Google AI. Details: ${lastError}` 
+    }, { status: 400 });
+
+  } catch (error) {
+    console.error("Internal Server Error:", error);
+    return NextResponse.json({ error: "The Sieve encountered a technical glitch." }, { status: 500 });
+  }
+}
